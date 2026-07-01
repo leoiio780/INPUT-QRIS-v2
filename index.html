@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QRIS Parser + Cross Date</title>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+<style>
+body{
+    font-family:Arial;
+    margin:20px;
+}
+
+textarea{
+    width:100%;
+    height:280px;
+    padding:10px;
+    font-size:14px;
+}
+
+button{
+    padding:10px 15px;
+    margin:10px 5px 10px 0;
+    cursor:pointer;
+}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+    margin-top:15px;
+}
+
+th,td{
+    border:1px solid #ddd;
+    padding:8px;
+}
+
+th{
+    background:#f4f4f4;
+}
+
+.success{color:green;font-weight:bold;}
+.pending{color:orange;font-weight:bold;}
+.cross{color:red;font-weight:bold;}
+
+.summary{
+    margin-top:15px;
+    padding:12px;
+    background:#f8f8f8;
+    border-radius:6px;
+}
+</style>
+</head>
+<body>
+
+<h2>QRIS Parser + Cross Date + Excel</h2>
+
+<textarea id="rawData" placeholder="Paste data QRIS di sini..."></textarea>
+
+<br>
+
+<button onclick="parseData()">Proses</button>
+<button onclick="downloadExcel()">Download Excel</button>
+
+<div id="summary" class="summary">Belum ada data</div>
+
+<table>
+<thead>
+<tr>
+    <th>No</th>
+    <th>Member</th>
+    <th>RRN</th>
+    <th>Nominal</th>
+    <th>Status</th>
+    <th>Keterangan</th>
+</tr>
+</thead>
+<tbody id="tbody"></tbody>
+</table>
+
+<script>
+
+let excelData = [];
+
+function parseData(){
+
+    const raw = document.getElementById("rawData").value;
+    const lines = raw.split("\n");
+
+    const tbody = document.getElementById("tbody");
+
+    tbody.innerHTML = "";
+    excelData = [];
+
+    let no = 1;
+    let totalSuccess = 0;
+    let totalPending = 0;
+
+    lines.forEach(line => {
+
+        line = line.trim();
+
+        // skip header
+        if(
+            line.includes("Member Name Tiket No") ||
+            line.includes("Date Request") ||
+            line.startsWith("No.")
+        ){
+            return;
+        }
+
+        if(!line) return;
+
+        if(!line.match(/^\d+\./)) return;
+
+        const cols = line.split("\t");
+
+        if(cols.length < 10) return;
+
+        const dateRequest = (cols[2] || "").trim();
+        const member = (cols[4] || "").trim();
+        const rrn = (cols[6] || "").trim();
+        let nominal = (cols[7] || "").trim().replace(/\./g,'');
+        const payment = (cols[10] || "").trim();
+
+        const status = line.includes("PENDING") ? "PENDING" : "SUCCESS";
+
+        // CROSS DATE CHECK
+        let keterangan = "NORMAL";
+
+        if(dateRequest && payment){
+
+            const reqDate = dateRequest.substring(0,10);
+            const payDate = payment.substring(0,10);
+
+            if(reqDate !== payDate){
+                keterangan = `CROSS DATE (${reqDate} → ${payDate})`;
+            }
+        }
+
+        excelData.push({
+            No: no,
+            Member: member,
+            RRN: rrn,
+            Nominal: Number(nominal),
+            Status: status,
+            Keterangan: keterangan
+        });
+
+        if(status === "SUCCESS") totalSuccess++;
+        if(status === "PENDING") totalPending++;
+
+        tbody.innerHTML += `
+        <tr>
+            <td>${no}</td>
+            <td>${member}</td>
+            <td>${rrn}</td>
+            <td>${nominal}</td>
+            <td class="${status.toLowerCase()}">${status}</td>
+            <td class="${keterangan.includes('CROSS') ? 'cross' : ''}">
+                ${keterangan}
+            </td>
+        </tr>
+        `;
+
+        no++;
+
+    });
+
+    document.getElementById("summary").innerHTML = `
+        Total Data: <b>${excelData.length}</b><br>
+        SUCCESS: <b>${totalSuccess}</b> |
+        PENDING: <b>${totalPending}</b>
+    `;
+}
+
+function downloadExcel(){
+
+    if(excelData.length === 0){
+        alert("Belum ada data");
+        return;
+    }
+
+    const ws = XLSX.utils.json_to_sheet(excelData);
+    const wb = XLSX.utils.book_new();
+
+    XLSX.utils.book_append_sheet(wb, ws, "QRIS");
+
+    XLSX.writeFile(wb, "hasil_qris.xlsx");
+}
+
+</script>
+
+</body>
+</html>
